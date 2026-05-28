@@ -1,34 +1,29 @@
-// Q: how to run the command
-// A: we need a shell to run command as a tty
-
 const std = @import("std");
-
-const Result = struct {
-    // Know about the result of the command, exit code, signal, etc.
-    term: std.process.Child.Term,
-};
 
 // A shell to run the command.
 const Shell = enum {
+    sh,
     bash,
-    zsh,
     fish,
+    zsh,
 };
 
 /// Run a command in the step.
 ///
 /// Returns a result from the command.
 pub fn runStepCommand(allocator: std.mem.Allocator, io: std.Io, shell: Shell, command: []const u8, env: *std.process.Environ.Map) !std.process.RunResult {
-    // TODO: env support.
-    // TODO: run with shell.
-    _ = shell; // autofix
+    const argv = switch (shell) {
+        .sh => &[_][]const u8{ "sh", "-c", command },
+        .bash => &[_][]const u8{ "bash", "-c", command },
+        .fish => &[_][]const u8{ "fish", "-c", command },
+        .zsh => &[_][]const u8{ "zsh", "-c", command },
+    };
 
-    // We don't support stdin in any case.
     return try std.process.run(
         allocator,
         io,
         .{
-            .argv = &[_][]const u8{ "bash", "-c", command },
+            .argv = argv,
             .environ_map = env,
         },
     );
@@ -41,12 +36,15 @@ test runStepCommand {
     var env = std.process.Environ.Map.init(allocator);
     defer env.deinit();
 
-    const result = try runStepCommand(allocator, io, .bash, "echo 'hello, world'", &env);
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
+    const shells = [_]Shell{ .sh, .bash, .fish };
+    for (shells) |shell| {
+        const result = try runStepCommand(allocator, io, shell, "echo 'hello, world'", &env);
+        defer allocator.free(result.stdout);
+        defer allocator.free(result.stderr);
 
-    try std.testing.expectEqual(0, result.term.exited);
-    try std.testing.expectEqualStrings("hello, world\n", result.stdout);
+        try std.testing.expectEqual(0, result.term.exited);
+        try std.testing.expectEqualStrings("hello, world\n", result.stdout);
+    }
 }
 
 test "runStepCommand - injecting the environment variables" {
@@ -59,6 +57,23 @@ test "runStepCommand - injecting the environment variables" {
     try env.put("VAR", "VALUE");
 
     const result = try runStepCommand(allocator, io, .bash, "echo $VAR", &env);
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    try std.testing.expectEqual(0, result.term.exited);
+    try std.testing.expectEqualStrings("VALUE\n", result.stdout);
+}
+
+test "runStepCommand - run code on different shell" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    var env = std.process.Environ.Map.init(allocator);
+    defer env.deinit();
+
+    try env.put("VAR", "VALUE");
+
+    const result = try runStepCommand(allocator, io, .fish, "echo $VAR", &env);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
