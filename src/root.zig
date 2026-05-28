@@ -19,6 +19,10 @@ pub fn runStepCommand(allocator: std.mem.Allocator, io: std.Io, shell: Shell, co
         .zsh => &[_][]const u8{ "zsh", "-c", command },
     };
 
+    // TODO: the result might need to translate into `
+    //
+    // - passed: RunResult
+    // - failed: RunResult
     return try std.process.run(
         allocator,
         io,
